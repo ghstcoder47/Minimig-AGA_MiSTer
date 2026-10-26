@@ -1,0 +1,33 @@
+name: Build core (Quartus 17.0.2)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Compile with Quartus Lite 17.0.2 (Cyclone V)
+        run: |
+          docker run --rm -v "$PWD":/build -w /build \
+            theypsilon/quartus-lite-c5:17.0.2 \
+            quartus_sh --flow compile Minimig
+
+      - name: Upload core
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minimig-usb-sampler-rbf
+          path: output_files/Minimig.rbf
+          if-no-files-found: error
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quartus-reports
+          path: output_files/*.rpt

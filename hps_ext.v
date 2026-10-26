@@ -1,5 +1,7 @@
 //
-// hps_ext for Minimig
+// Minimig-specific commands on the MiSTer host bus, all in clk_sys.
+// UIO_DMA_WRITE routes window 0xF600 to usb_sampler; UIO_DMA_SDIO reports
+// its FIFO headroom in bit 15 of the second status word. This window is not Amiga CPU address space.
 //
 // Copyright (c) 2020 Alexey Melnikov
 //
@@ -86,7 +88,12 @@ module hps_ext
 	output reg        cdtv_cs_card,
 	input             cdtv_req,
 	input             cdtv_nvr_dirty,
-	input             cdtv_card_dirty
+	input             cdtv_card_dirty,
+
+	input             smp_req,
+	output reg        smp_start,
+	output reg        smp_wr,
+	output reg [15:0] smp_dout
 );
 
 assign EXT_BUS[15:0] = io_fpga ? fpga_dout : io_dout;
@@ -116,12 +123,14 @@ always@(posedge clk_sys) begin : main_proc
 	reg ide_cs = 0;
 	reg cdda_cs = 0;
 	reg cdda_cs_flush = 0;
+	reg smp_cs = 0;
 
 	sset <= 0;
 
 	{ide_rd, ide_wr} <= 0;
 	cdda_wr <= 0;
 	cdda_flush <= 0;
+	{smp_start, smp_wr} <= 0;
 	{akiko_rd, akiko_wr} <= 0;
 	{cdtv_rd, cdtv_wr} <= 0;
 	if((ide_rd | ide_wr) & ~&ide_addr[3:0]) ide_addr <= ide_addr + 1'd1;
@@ -134,6 +143,7 @@ always@(posedge clk_sys) begin : main_proc
 		cdda_cs <= 0;
 		cdda_flush <= cdda_cs_flush;
 		cdda_cs_flush <= 0;
+		smp_cs <= 0;
 		akiko_cs <= 0;
 		akiko_cs_sec <= 0;
 		akiko_cs_nvr <= 0;
@@ -152,6 +162,7 @@ always@(posedge clk_sys) begin : main_proc
 
 		ide_dout <= io_din;
 		cdda_dout <= io_din;
+		smp_dout <= io_din;
 		akiko_dout <= io_din;
 		cdtv_dout <= io_din;
 		if(byte_cnt == 1) begin
@@ -159,6 +170,9 @@ always@(posedge clk_sys) begin : main_proc
 			ide_cs       <= (io_din[15:9] == 7'b1111000);
 			cdda_cs      <= (io_din[15:9] == 7'b1111001) && !io_din[8];
 			cdda_cs_flush<= (io_din[15:9] == 7'b1111001) &&  io_din[8] && (cmd == 'h61);
+			// Decode 0xF600-0xF7FF. The host sends low address word first.
+			smp_cs       <= (io_din[15:9] == 7'b1111011);
+			smp_start    <= (io_din[15:9] == 7'b1111011) && (cmd == 'h61);
 			akiko_cs        <= (io_din[15:9] == 7'b1111010) && !io_din[7] && !io_din[5];
 			akiko_cs_sec    <= (io_din[15:9] == 7'b1111010) && !io_din[7] && !io_din[5] && io_din[8];
 			akiko_cs_nvr    <= (io_din[15:9] == 7'b1111010) && !io_din[7] && !io_din[5] && io_din[6];
@@ -235,9 +249,17 @@ always@(posedge clk_sys) begin : main_proc
 						4: svbl_b <= io_din[11:0];
 					endcase
 
+				'h63:
+					// Second status word: bit 15 = sampler FIFO has room for a burst.
+					// The first word is full (akiko_rst_cnt uses bits 15:14).
+					if(byte_cnt == 1) io_dout <= {smp_req, 15'd0};
+
 				'h61: begin
+					// Payload follows both address words; the counter saturates
+					// so long bursts keep emitting one write pulse per host word.
 					if(byte_cnt >= 3) begin
 						cdda_wr  <= cdda_cs;
+						smp_wr   <= smp_cs;
 						ide_wr   <= ide_cs;
 						akiko_wr <= akiko_cs;
 						cdtv_wr  <= cdtv_cs | cdtv_cs_stch | cdtv_cs_sec | cdtv_cs_nvr | cdtv_cs_card;
