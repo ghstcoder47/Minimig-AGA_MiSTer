@@ -4,6 +4,10 @@
 /* 2017-2020 Alexey Melnikov                */
 /********************************************/
 
+// Connects the Amiga chipset to MiSTer clocks, host I/O and audio/video.
+// USB capture travels from hps_ext through usb_sampler to the CIA-A PRB mux;
+// all sampler signals use clk_sys, whose frequency follows PAL/NTSC.
+
 module emu
 (
 	`include "sys/emu_ports.vh"
@@ -116,6 +120,15 @@ wire        akiko_cs_sec;
 wire        akiko_cs_nvr;
 wire        akiko_cs_subcode;
 wire        akiko_req;
+wire        smp_req;
+wire        smp_start;
+wire        smp_wr;
+wire [15:0] smp_dout;
+wire        smp_active;
+wire        smp_ce;
+wire [15:0] smp_l;
+wire [15:0] smp_r;
+wire  [7:0] smp_u8;
 wire        akiko_sec_req;
 wire        akiko_rx_busy;
 wire        akiko_nvr_dirty;
@@ -905,6 +918,9 @@ minimig minimig
 
 	.aud_mix      (AUDIO_MIX        ),
 
+	// Parallel-port capture is independent of the Toccata sound-card interface.
+	.smp_active   (smp_active),
+	.smp_u8       (smp_u8),
 	//toccata soundcard
 	.toccata_ena  (toccata_ena),
 	.toccata_base (toccata_base),
@@ -1414,6 +1430,25 @@ always @(posedge CLK_AUDIO) begin
 	old_r1 <= old_r0;
 	if(old_r0 == old_r1) aud_r <= old_r1;
 end
+
+// The host supplies mono as identical L/R words; only the PRB byte is consumed.
+usb_sampler #(28375160, 28636360) usb_sampler
+(
+	.clk(clk_sys),
+	.reset(reset),
+	.ntsc(ntsc),
+	.signed_out(status[56]),
+	.dither_mode(status[58:57]),
+	.start(smp_start),
+	.wr(smp_wr),
+	.din(smp_dout),
+	.req(smp_req),
+	.active(smp_active),
+	.ce(smp_ce),
+	.out_l(smp_l),
+	.out_r(smp_r),
+	.out_u8(smp_u8)
+);
 
 wire  [15:0] cdda_l;
 wire  [15:0] cdda_r;

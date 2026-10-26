@@ -10,6 +10,15 @@ The Minimig-MiSTer variant in this repository has been upgraded with [AGA chipse
 
 This version has been modified to add support for MiSTer Floppy, SCP and IPF support - see https://mister.robsmithdev.co.uk
 
+## USB sampler (this fork)
+
+This fork adds `rtl/usb_sampler.v`: a 48 kHz FIFO that the ARM side fills
+from a USB audio interface and that the Amiga reads through the parallel
+port (CIA-A PRB) like a classic sampler. Dither (off, RPDF, TPDF, gated TPDF)
+and the signed/offset-binary output format are selected via `status[58:57]`
+and `status[56]`. It needs the matching Main_MiSTer fork. Release package
+with install script and user guide: see the Releases page.
+
 ## Core features supported
 
 * Chipset variants : OCS, ECS, AGA, CD32, CDTV
