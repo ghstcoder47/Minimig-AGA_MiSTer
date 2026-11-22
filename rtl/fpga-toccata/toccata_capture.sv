@@ -15,7 +15,7 @@
 
 module toccata_capture #(
     parameter int CLK_FREQUENCY = 28_359_380,
-    parameter int FIFO_SIZE = 1024
+    parameter int FIFO_SIZE = 8192
 ) (
     input  logic        clk,
     input  logic        rst,
@@ -47,7 +47,7 @@ module toccata_capture #(
 
 // FIFO dimensions
 localparam int FIFO_FULL  = FIFO_SIZE;
-localparam int FIFO_HALF  = FIFO_SIZE / 2;
+localparam int FIFO_HALF  = 512; // Interrupt threshold of the library (reads 512 bytes per interrupt)
 localparam int FIFO_EMPTY = 0;
 
 

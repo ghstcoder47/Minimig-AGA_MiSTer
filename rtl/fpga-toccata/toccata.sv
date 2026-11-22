@@ -209,7 +209,8 @@ struct {
 // The record FIFO pops when the CPU read of the FIFO window ends, so the byte
 // seen by the CPU is the one that is removed.
 logic cap_rd;
-logic cap_half_q;
+logic cap_hold;
+logic [8:0] cap_pop_cnt;
 logic cap_rd_sel, cap_rd_q;
 assign cap_rd_sel = sel && rd && ad.cen && ({addr[14], addr[13], addr[11]} == CODEC_FIFO);
 assign cap_rd     = cap_rd_q && !cap_rd_sel;
@@ -357,10 +358,15 @@ always_ff @(posedge clk) begin
             irq_reg[IRQ_PLAY_HALF] <= 1'b1; // Half empty interrupt
         end
         // Capture half full interrupt
-        // Edge triggered: a level trigger re-fires right after the status read,
-        // while the FIFO is still half full, and the library then reads stale data.
-        cap_half_q <= cap.half_full;
-        if (cap.half_full && !cap_half_q && toc_status[STATUS_FIFO_RECORD] == 1'b1 && toc_status[STATUS_RECORD_INTENA] == 1'b1) begin
+        // After the status read the library reads 512 bytes. Hold off the next record
+        // interrupt until they are consumed, otherwise it fires again while the FIFO is
+        // still half full and the library then reads stale data.
+        if (cap_rd) begin
+            cap_pop_cnt <= cap_pop_cnt + 1'd1;
+            if (cap_pop_cnt == 9'd511) cap_hold <= 1'b0;
+        end
+        if (toc_status[STATUS_FIFO_RECORD] == 1'b0) cap_hold <= 1'b0;
+        if (cap.half_full && !cap_hold && toc_status[STATUS_FIFO_RECORD] == 1'b1 && toc_status[STATUS_RECORD_INTENA] == 1'b1) begin
             irq_reg[IRQ_RECORD_HALF] <= 1'b1; // Half full interrupt
         end
 
@@ -508,6 +514,10 @@ always_ff @(posedge clk) begin
                         // Clear the interrupt register after reading
                         // IRQ_INT_IRQ is active low, so reset
                         clear_irq <= 1'b1;
+                        if (irq_reg[IRQ_RECORD_HALF]) begin
+                            cap_hold <= 1'b1;
+                            cap_pop_cnt <= 9'd0;
+                        end
 
                         // Return the current interrupt status register
                         data_out <= {irq_reg, irq_reg};
