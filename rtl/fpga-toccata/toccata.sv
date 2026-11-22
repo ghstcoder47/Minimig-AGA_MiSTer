@@ -516,8 +516,9 @@ always_ff @(posedge clk) begin
                             end
                             data_out <= {8'h00, fifo.data_out};
                         end else begin
-                            // Return dummy value from record module
-                            data_out <= {8'h00, cap.data_out};
+                            // toccata.library reads the FIFO with byte reads or movep at the
+                            // even address $2000, which takes D15-D8. Drive both byte lanes.
+                            data_out <= {cap.data_out, cap.data_out};
                         end
                     end
                     CODEC_REG_1: begin // 60xx - INDEX REGISTER
