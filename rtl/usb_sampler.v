@@ -18,6 +18,7 @@ module usb_sampler #(parameter CLK_RATE = 28375160, parameter CLK_RATE_NTSC = 28
 	input             reset,
 	input             signed_out, // 1: signed 8 bit output (silence 0x00), 0: offset binary (0x80)
 	input       [1:0] dither_mode, // 0 off (rounding), 1 RPDF +-0.5 LSB, 2 TPDF +-1 LSB, 3 TPDF gated by silence
+	input             deep,       // Toccata recording: deep buffer, latency is irrelevant
 	input             ntsc,       // selects the clk_sys frequency for the 48 kHz divider
 
 	// hps_ext.v uses the same clock; start precedes the first payload word.
@@ -34,7 +35,8 @@ module usb_sampler #(parameter CLK_RATE = 28375160, parameter CLK_RATE_NTSC = 28
 	output      [7:0] out_u8      // PRB byte; Linux may pre-bias words for signed sampling
 );
 
-localparam AW = 11;               // 2048 frames, ~42 ms
+localparam AW = 13;               // 8192 frames, ~170 ms
+localparam PRIME = 4096;          // deep mode: frames collected before output starts (~85 ms)
 
 reg  [31:0] mem[2**AW];
 // The extra pointer bit distinguishes empty from full after address wrap.
@@ -44,7 +46,9 @@ reg         phase;
 
 // Request below half-full leaves room for the host's complete 512-frame burst.
 wire [AW:0] level = wr_ptr - rd_ptr;
-assign req = (level < 2**(AW-1));
+// Normal: below 1024 frames (~21 ms standing fill, low latency for the parallel port).
+// Deep: nearly the whole FIFO, so Linux main loop stalls (disk access) do not underrun.
+assign req = deep ? (level < 2**AW - 512) : (level < 1024);
 
 always @(posedge clk) begin
 	reg [31:0] q;
@@ -94,6 +98,7 @@ always @(posedge clk) begin
 	end
 end
 
+reg         primed;
 reg [15:0] idle_cnt;
 assign active = |idle_cnt;
 
@@ -102,6 +107,7 @@ always @(posedge clk) begin
 
 	if (reset) begin
 		rd_ptr   <= 0;
+		primed   <= 0;
 		idle_cnt <= 0;
 		out_l    <= 0;
 		out_r    <= 0;
@@ -112,10 +118,13 @@ always @(posedge clk) begin
 		if (cen_48k) begin
 			if (idle_cnt && !start) idle_cnt <= idle_cnt - 1'd1;
 			// An underrun holds the last output; the inactivity timeout is separate.
-			if (level != 0 && rd_q_ok) begin
+			if (!deep || level == 0) primed <= 0;
+			else if (level >= PRIME) primed <= 1;
+			if (level != 0 && rd_q_ok && (!deep || primed)) begin
 				out_l  <= rd_q[31:16];
 				out_r  <= rd_q[15:0];
-				rd_ptr <= rd_ptr + 1'd1;
+				// Leaving deep mode: skip a frame per tick until the standing fill is back to normal.
+				rd_ptr <= rd_ptr + ((!deep && level > 2048) ? 2'd2 : 2'd1);
 				ce     <= 1;
 			end
 		end

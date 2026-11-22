@@ -121,6 +121,7 @@ wire        akiko_cs_nvr;
 wire        akiko_cs_subcode;
 wire        akiko_req;
 wire        smp_req;
+wire        smp_deep;
 wire        smp_start;
 wire        smp_wr;
 wire [15:0] smp_dout;
@@ -960,6 +961,7 @@ minimig minimig
 	.a2065_base (a2065_base),
 	.toccata_aud_left (toccata_aud_left),
 	.toccata_aud_right(toccata_aud_right),
+	.toccata_rec(smp_deep),
 
 	.cdtv_mode           (cdtv_mode            ),
 
@@ -1476,6 +1478,7 @@ usb_sampler #(28375160, 28636360) usb_sampler
 	.wr(smp_wr),
 	.din(smp_dout),
 	.req(smp_req),
+	.deep(smp_deep),
 	.active(smp_active),
 	.ce(smp_ce),
 	.out_l(smp_l),

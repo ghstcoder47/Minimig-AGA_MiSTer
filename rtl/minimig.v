@@ -261,6 +261,7 @@ module minimig
 	input   [7:0] cdtv_base,
 	output [15:0] toccata_aud_left,
 	output [15:0] toccata_aud_right,
+	output        toccata_rec,
 
 	// A2065 Ethernet
 	input         a2065_ena,
@@ -1054,7 +1055,8 @@ toccata #(
 	.smp_ce(smp_ce),
 	.smp_l(smp_l),
 	.smp_r(smp_r),
-	.smp_active(smp_active)
+	.smp_active(smp_active),
+	.rec_active(toccata_rec)
 );
 
 //-------------------------------------------------------------------------------------

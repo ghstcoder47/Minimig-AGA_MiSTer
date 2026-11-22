@@ -91,6 +91,7 @@ module hps_ext
 	input             cdtv_card_dirty,
 
 	input             smp_req,
+	input             smp_deep,
 	output reg        smp_start,
 	output reg        smp_wr,
 	output reg [15:0] smp_dout
@@ -250,9 +251,10 @@ always@(posedge clk_sys) begin : main_proc
 					endcase
 
 				'h63:
-					// Second status word: bit 15 = sampler FIFO has room for a burst.
+					// Second status word: bit 15 = sampler FIFO has room for a burst,
+					// bit 14 = deep buffering (Toccata record active).
 					// The first word is full (akiko_rst_cnt uses bits 15:14).
-					if(byte_cnt == 1) io_dout <= {smp_req, 15'd0};
+					if(byte_cnt == 1) io_dout <= {smp_req, smp_deep, 14'd0};
 
 				'h61: begin
 					// Payload follows both address words; the counter saturates
