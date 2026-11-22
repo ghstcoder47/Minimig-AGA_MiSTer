@@ -209,6 +209,7 @@ struct {
 // The record FIFO pops when the CPU read of the FIFO window ends, so the byte
 // seen by the CPU is the one that is removed.
 logic cap_rd;
+logic cap_half_q;
 logic cap_rd_sel, cap_rd_q;
 assign cap_rd_sel = sel && rd && ad.cen && ({addr[14], addr[13], addr[11]} == CODEC_FIFO);
 assign cap_rd     = cap_rd_q && !cap_rd_sel;
@@ -356,7 +357,10 @@ always_ff @(posedge clk) begin
             irq_reg[IRQ_PLAY_HALF] <= 1'b1; // Half empty interrupt
         end
         // Capture half full interrupt
-        if (cap.half_full && toc_status[STATUS_FIFO_RECORD] == 1'b1 && toc_status[STATUS_RECORD_INTENA] == 1'b1) begin
+        // Edge triggered: a level trigger re-fires right after the status read,
+        // while the FIFO is still half full, and the library then reads stale data.
+        cap_half_q <= cap.half_full;
+        if (cap.half_full && !cap_half_q && toc_status[STATUS_FIFO_RECORD] == 1'b1 && toc_status[STATUS_RECORD_INTENA] == 1'b1) begin
             irq_reg[IRQ_RECORD_HALF] <= 1'b1; // Half full interrupt
         end
 
