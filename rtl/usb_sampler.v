@@ -30,6 +30,7 @@ module usb_sampler #(parameter CLK_RATE = 28375160, parameter CLK_RATE_NTSC = 28
 	// Minimig switches PRB back to the joystick inputs when active expires.
 	output            active,     // recent ARM transaction, not a FIFO-nonempty flag
 	output reg        ce,         // pulse at 48 kHz when out_l/out_r updated
+	output reg  [3:0] min_lvl,  // debug: lowest FIFO fill (level/512) since deep mode was primed
 	output reg [15:0] out_l,
 	output reg [15:0] out_r,
 	output      [7:0] out_u8      // PRB byte; Linux may pre-bias words for signed sampling
@@ -118,6 +119,8 @@ always @(posedge clk) begin
 		if (cen_48k) begin
 			if (idle_cnt && !start) idle_cnt <= idle_cnt - 1'd1;
 			// An underrun holds the last output; the inactivity timeout is separate.
+			if (!deep) min_lvl <= 4'd15;
+			else if (primed && level[AW:9] < {1'b0, min_lvl}) min_lvl <= level[AW-1:9];
 			if (!deep || level == 0) primed <= 0;
 			else if (level >= PRIME) primed <= 1;
 			if (level != 0 && rd_q_ok && (!deep || primed)) begin

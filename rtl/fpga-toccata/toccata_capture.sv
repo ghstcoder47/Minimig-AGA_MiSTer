@@ -214,8 +214,9 @@ logic [3:0] mode_q;
 wire        flush = rst || !cen || (mode_q != {cen, sm, fmt, lc});
 
 logic [4:0] dbg_hold;
-logic [3:0] dbg_ovr, dbg_rde;
-assign dbg = {dbg_hold, dbg_ovr, dbg_rde};
+logic [1:0] dbg_ovr, dbg_rde;
+logic       dbg_started, dbg_prev_hold;
+assign dbg = {dbg_hold, 4'd0, dbg_ovr, dbg_rde};
 
 always_ff @(posedge clk) begin
     ca_en  <= 1'b0;
@@ -262,8 +263,11 @@ always_ff @(posedge clk) begin
             last_l <= (snap_n == 0) ? last_l : 16'((prod_l + 39'sd32768) >>> 16);
             last_r <= (snap_n == 0) ? last_r : 16'((prod_r + 39'sd32768) >>> 16);
             step   <= 2'd0;
-            if (snap_n == 0 && dbg_hold != 5'd31) dbg_hold <= dbg_hold + 1'd1;
-            if (room < nbytes && dbg_ovr != 4'd15) dbg_ovr <= dbg_ovr + 1'd1;
+            // Count gaps of the source stream (episodes), but not the start-up before the first sample.
+            if (snap_n != 0) dbg_started <= 1'b1;
+            dbg_prev_hold <= (snap_n == 0);
+            if (snap_n == 0 && !dbg_prev_hold && dbg_started && dbg_hold != 5'd31) dbg_hold <= dbg_hold + 1'd1;
+            if (room < nbytes && dbg_ovr != 2'd3) dbg_ovr <= dbg_ovr + 1'd1;
             // A sample is stored completely or dropped (overrun).
             if (room >= nbytes) state <= S_WRITE;
             else                state <= S_IDLE;
@@ -278,7 +282,7 @@ always_ff @(posedge clk) begin
     endcase
 
     if (rd && !empty) rd_ptr <= rd_ptr + 1'd1;
-    if (rd && empty && dbg_rde != 4'd15) dbg_rde <= dbg_rde + 1'd1;
+    if (rd && empty && dbg_rde != 2'd3) dbg_rde <= dbg_rde + 1'd1;
 
     if (flush) begin
         wr_ptr <= '0;
@@ -287,6 +291,8 @@ always_ff @(posedge clk) begin
         dbg_hold <= '0;
         dbg_ovr  <= '0;
         dbg_rde  <= '0;
+        dbg_started <= 1'b0;
+        dbg_prev_hold <= 1'b0;
         last_l <= 16'sd0;
         last_r <= 16'sd0;
         acc_l  <= 21'sd0;

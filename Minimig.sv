@@ -122,7 +122,9 @@ wire        akiko_cs_subcode;
 wire        akiko_req;
 wire        smp_req;
 wire        smp_deep;
-wire [12:0] smp_dbg;
+wire [12:0] smp_dbg_c;
+wire  [3:0] smp_min_lvl;
+wire [12:0] smp_dbg = {smp_dbg_c[12:8], smp_min_lvl, smp_dbg_c[3:0]};
 wire        smp_start;
 wire        smp_wr;
 wire [15:0] smp_dout;
@@ -963,7 +965,7 @@ minimig minimig
 	.toccata_aud_left (toccata_aud_left),
 	.toccata_aud_right(toccata_aud_right),
 	.toccata_rec(smp_deep),
-	.toccata_dbg(smp_dbg),
+	.toccata_dbg(smp_dbg_c),
 
 	.cdtv_mode           (cdtv_mode            ),
 
@@ -1481,6 +1483,7 @@ usb_sampler #(28375160, 28636360) usb_sampler
 	.din(smp_dout),
 	.req(smp_req),
 	.deep(smp_deep),
+	.min_lvl(smp_min_lvl),
 	.active(smp_active),
 	.ce(smp_ce),
 	.out_l(smp_l),
