@@ -157,8 +157,21 @@ always_ff @(posedge clk) data_out <= mem[rd_ptr[AW-1:0]];
 // ---------------------------------------------------------------------------
 // Boxcar average of the 48 kHz source between two sample strobes.
 // ---------------------------------------------------------------------------
-wire signed [15:0] in_l = src_active ? src_l : 16'sd0;
-wire signed [15:0] in_r = src_active ? src_r : 16'sd0;
+// TEST: 440 Hz sawtooth at 48 kHz instead of the USB stream
+logic [10:0] tdiv = 0;
+logic signed [15:0] tsaw = 0;
+logic        tce = 0;
+always_ff @(posedge clk) begin
+    tce <= 1'b0;
+    if (tdiv >= 11'd590) begin
+        tdiv <= 0;
+        tce  <= 1'b1;
+        tsaw <= tsaw + 16'sd600;
+    end else tdiv <= tdiv + 1'd1;
+end
+wire signed [15:0] in_l = tsaw >>> 1;
+wire signed [15:0] in_r = tsaw >>> 1;
+wire src_ce_t = tce;
 
 logic signed [20:0] acc_l, acc_r;
 logic        [3:0]  acc_n;
@@ -232,10 +245,10 @@ always_ff @(posedge clk) begin
         snap_l <= acc_l;
         snap_r <= acc_r;
         snap_n <= acc_n;
-        acc_l  <= src_ce ? 21'(in_l) : 21'sd0;
-        acc_r  <= src_ce ? 21'(in_r) : 21'sd0;
-        acc_n  <= src_ce ? 4'd1 : 4'd0;
-    end else if (src_ce) begin
+        acc_l  <= src_ce_t ? 21'(in_l) : 21'sd0;
+        acc_r  <= src_ce_t ? 21'(in_r) : 21'sd0;
+        acc_n  <= src_ce_t ? 4'd1 : 4'd0;
+    end else if (src_ce_t) begin
         acc_l <= acc_l + 21'(in_l);
         acc_r <= acc_r + 21'(in_r);
         if (acc_n != 4'd15) acc_n <= acc_n + 1'd1;
