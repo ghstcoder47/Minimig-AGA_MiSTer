@@ -211,7 +211,7 @@ struct {
 // The record FIFO pops when the CPU read of the FIFO window ends, so the byte
 // seen by the CPU is the one that is removed.
 logic cap_rd;
-assign rec_active = ad.cen && toc_status[STATUS_FIFO_RECORD];
+assign rec_active = ad.cen;
 wire [12:0] rec_dbg_w;
 assign rec_dbg = rec_dbg_w;
 logic cap_hold;
