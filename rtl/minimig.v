@@ -250,6 +250,9 @@ module minimig
 	// USB audio sampler (parallel port)
 	// PRB input supplied by usb_sampler in the outer MiSTer module.
 	input         smp_active,
+	input         smp_ce,
+	input  [15:0] smp_l,
+	input  [15:0] smp_r,
 	input   [7:0] smp_u8,
 
 	// Toccata audio
@@ -1047,7 +1050,11 @@ toccata #(
 	.sel(sel_toccata),
 	.toc_int(int6_toccata),
 	.out_left(toccata_aud_left),
-	.out_right(toccata_aud_right)
+	.out_right(toccata_aud_right),
+	.smp_ce(smp_ce),
+	.smp_l(smp_l),
+	.smp_r(smp_r),
+	.smp_active(smp_active)
 );
 
 //-------------------------------------------------------------------------------------

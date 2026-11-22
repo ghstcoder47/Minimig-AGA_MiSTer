@@ -946,8 +946,11 @@ minimig minimig
 
 	.aud_mix      (AUDIO_MIX        ),
 
-	// Parallel-port capture is independent of the Toccata sound-card interface.
+	// The sampler stream feeds the parallel port (PRB) and the Toccata record FIFO.
 	.smp_active   (smp_active),
+	.smp_ce       (smp_ce),
+	.smp_l        (smp_l),
+	.smp_r        (smp_r),
 	.smp_u8       (smp_u8),
 	//toccata soundcard
 	.toccata_ena  (toccata_ena),

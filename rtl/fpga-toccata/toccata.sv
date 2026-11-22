@@ -23,7 +23,12 @@ module toccata #(
     output logic        toc_int, // Toccata interrupt active high
     // Audio output
     output logic [15:0] out_left,
-    output logic [15:0] out_right
+    output logic [15:0] out_right,
+    // Record source (usb_sampler, 48 kHz)
+    input  wire         smp_ce,
+    input  wire signed [15:0] smp_l,
+    input  wire signed [15:0] smp_r,
+    input  wire         smp_active
 );
 
 // Reset values for ad1848 registers
@@ -193,15 +198,22 @@ toccata_playback #(
     .endata(fifo.endata)
 );
 
-// Dummy Toccata audio capture module
+// Toccata audio capture, fed by the USB sampler stream
 struct {
     logic [7:0] data_out;
-    logic       rd;
     logic       empty;
     logic       half_full;
     logic       full;
     logic       endata;
 } cap;
+// The record FIFO pops when the CPU read of the FIFO window ends, so the byte
+// seen by the CPU is the one that is removed.
+logic cap_rd;
+logic cap_rd_sel, cap_rd_q;
+assign cap_rd_sel = sel && rd && ad.cen && ({addr[14], addr[13], addr[11]} == CODEC_FIFO);
+assign cap_rd     = cap_rd_q && !cap_rd_sel;
+always_ff @(posedge clk) cap_rd_q <= cap_rd_sel;
+
 toccata_capture #(
     .CLK_FREQUENCY(CLK_FREQUENCY)
 ) my_capture (
@@ -212,10 +224,16 @@ toccata_capture #(
     .freq_sel(ad.freq_sel),
     .sm(ad.sm),
     .fmt(ad.fmt),
+    .lc(ad.lc),
     .css(ad.css),
 
+    .src_ce(smp_ce),
+    .src_l(smp_l),
+    .src_r(smp_r),
+    .src_active(smp_active),
+
     .data_out(cap.data_out),
-    .rd(cap.rd),
+    .rd(cap_rd),
     .empty(cap.empty),
     .half_full(cap.half_full),
     .full(cap.full),

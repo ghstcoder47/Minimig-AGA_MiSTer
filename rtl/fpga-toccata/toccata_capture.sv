@@ -1,10 +1,16 @@
 
 /********************************************/
 /* toccata_record.v                         */
-/* Toccata DUMMY sound record               */
+/* Toccata sound record                     */
 /*                                          */
 /* 2022-2023, ranzbak@gmail.com             */
+/* USB audio source, 2026, Dawid Janas      */
 /********************************************/
+
+// The record FIFO is fed from the 48 kHz stream of usb_sampler. Samples are
+// averaged (boxcar) down to the AD1848 sample rate selected by the driver and
+// packed like the real codec: 8 bit unsigned, or 16 bit little endian two's
+// complement; stereo is left then right.
 
 
 module toccata_capture #(
@@ -19,11 +25,18 @@ module toccata_capture #(
     input  wire  [2:0]  freq_sel,   // See table below
     input  wire         sm,         // 0 - Mono, 1 - Stereo
     input  wire         fmt,        // 0 - 8 bit unsigned, 1 - 16 bit 2 complement
+    input  wire         lc,         // 1 - companded, handled as 8 bit like playback
     input  wire         css,        // 0 - 24.576, 1 - 16.9344
 
+    // Audio source: usb_sampler, 48 kHz strobe with signed 16 bit samples
+    input  wire         src_ce,
+    input  wire signed [15:0] src_l,
+    input  wire signed [15:0] src_r,
+    input  wire         src_active, // stream is running, otherwise record silence
+
     // FIFO interface
-    output logic [7:0]  data_out,   // Data output
-    input  logic        rd,         // High when read is done
+    output logic [7:0]  data_out,   // Head byte of the FIFO
+    input  logic        rd,         // One clock pulse: head byte has been consumed
     output logic        empty,      // 1 - FIFO is empty
     output logic        half_full,  // 1 - FIFO is half full
     output logic        full,       // 1 - FIFO is full
@@ -122,95 +135,152 @@ always_ff @(posedge clk) begin
     `endif
 end
 
-localparam FIFO_BW = $clog2(FIFO_SIZE) + 1;
-logic                       ca_en;            // Capture enable strobe
-logic [FIFO_BW-1:0] fifo_counter;     // Fake fifo counter
+localparam int AW = $clog2(FIFO_SIZE);
+logic       ca_en;            // Sample rate strobe
+
+// ---------------------------------------------------------------------------
+// FIFO, first-word style: data_out always shows the head byte.
+// ---------------------------------------------------------------------------
+logic [7:0] mem [FIFO_SIZE];
+logic [AW:0] wr_ptr, rd_ptr;
+wire  [AW:0] level = wr_ptr - rd_ptr;
 
 always_comb begin
-    // Generate the FIFO status signals
-    empty = 1'b0;
-    half_full = 1'b0;
-    full = 1'b0;
-
-    // Set the FIFO signals
-    if (fifo_counter == FIFO_EMPTY) begin
-        empty = 1'b1;
-    end
-
-    // FIFO half full
-    if (fifo_counter > FIFO_HALF) begin
-        half_full = 1'b1;
-    end
-
-    // FIFO full
-    if (fifo_counter >= FIFO_FULL) begin
-        full = 1'b1;
-        half_full = 1'b0;
-    end
-
-    // endata is ca_en
-    endata = ca_en;
+    empty     = (level == 0);
+    full      = (level >= FIFO_FULL);
+    half_full = (level > FIFO_HALF) && !full;
+    endata    = ca_en;
 end
 
+always_ff @(posedge clk) data_out <= mem[rd_ptr[AW-1:0]];
+
+// ---------------------------------------------------------------------------
+// Boxcar average of the 48 kHz source between two sample strobes.
+// ---------------------------------------------------------------------------
+wire signed [15:0] in_l = src_active ? src_l : 16'sd0;
+wire signed [15:0] in_r = src_active ? src_r : 16'sd0;
+
+logic signed [20:0] acc_l, acc_r;
+logic        [3:0]  acc_n;
+logic signed [20:0] snap_l, snap_r;
+logic        [3:0]  snap_n;
+logic signed [15:0] last_l, last_r, avg_l, avg_r;
+logic signed [38:0] prod_l, prod_r;
+
+// 65536 / n, with n = 0 handled separately.
+function automatic [16:0] recip(input [3:0] n);
+    case (n)
+        4'd1:  recip = 17'd65536;
+        4'd2:  recip = 17'd32768;
+        4'd3:  recip = 17'd21845;
+        4'd4:  recip = 17'd16384;
+        4'd5:  recip = 17'd13107;
+        4'd6:  recip = 17'd10923;
+        4'd7:  recip = 17'd9362;
+        4'd8:  recip = 17'd8192;
+        4'd9:  recip = 17'd7282;
+        4'd10: recip = 17'd6554;
+        4'd11: recip = 17'd5958;
+        4'd12: recip = 17'd5461;
+        4'd13: recip = 17'd5041;
+        4'd14: recip = 17'd4681;
+        default: recip = 17'd4369;
+    endcase
+endfunction
+
+// ---------------------------------------------------------------------------
+// Packer: one averaged sample becomes 1, 2 or 4 bytes in the FIFO.
+// ---------------------------------------------------------------------------
+typedef enum logic [2:0] {S_IDLE, S_MUL, S_AVG, S_WRITE} state_t;
+state_t state;
+logic [1:0] step;
+
+wire        is16   = fmt && !lc;
+wire  [2:0] nbytes = (sm ? 3'd2 : 3'd1) << is16;
+wire [AW:0] room   = FIFO_SIZE[AW:0] - level;
+
+// Mono is the mean of both channels.
+wire signed [16:0] mono_sum = avg_l + avg_r;
+wire signed [15:0] mono     = mono_sum[16:1];
+
+wire signed [15:0] pick = sm ? ((is16 ? step[1] : step[0]) ? avg_r : avg_l) : mono;
+wire signed [16:0] rnd  = pick + 17'sd128;
+wire        [7:0]  pcm8 = (rnd > 17'sd32767) ? 8'h7F : rnd[15:8];
+wire        [7:0]  wbyte = is16 ? (step[0] ? pick[15:8] : pick[7:0]) : (pcm8 ^ 8'h80);
+
+// Any change of the capture mode restarts the stream on a sample boundary.
+logic [3:0] mode_q;
+wire        flush = rst || !cen || (mode_q != {cen, sm, fmt, lc});
+
 always_ff @(posedge clk) begin
-    ca_en <= 1'b0;
+    ca_en  <= 1'b0;
+    mode_q <= {cen, sm, fmt, lc};
 
     if (rst == 1'b1) begin
         audio_delay <= audio_dev;
-        fifo_counter <= 0;
+    end else if (cen == 1'b0) begin
+        audio_delay <= audio_dev;
+    end else if (audio_delay == 0) begin
+        audio_delay <= audio_dev;
+        ca_en <= 1'b1;
     end else begin
-        // Trigger fake sample strobe
-        if (cen == 1'b0) begin
-            // Just keep the counter ready
-            audio_delay <= audio_dev;
-        end else begin
-            if (audio_delay == 0) begin
-                // When 0 start sample FSM
-                audio_delay <= audio_dev;
-                ca_en <= 1'b1;
-            end else begin
-                // counting down to action gain
-                audio_delay <= audio_delay - 1'd1;
-            end
-        end
+        audio_delay <= audio_delay - 1'd1;
+    end
 
-        // Process to run when the FSM is triggered
-        if (ca_en == 1'b1 && full == 1'b0) begin
-            // Increment the fake FIFO counter
-            if (sm == 1'b0) begin
-                if (fmt == 1'b0) begin
-                    // Mono 8-bit, 1 byte per sample
-                    fifo_counter <= fifo_counter + 1'd1;
-                end else begin
-                    // Mono 16-bit, 2 bytes per sample
-                    fifo_counter <= fifo_counter + 2'd2;
-                end
-            end else begin
-                if (fmt == 1'b0) begin
-                    // Stereo 8-bit, 2 byte per sample
-                    fifo_counter <= fifo_counter + 2'd2;
-                end else begin
-                    // Stereo 16-bit, 4 byte per sample
-                    fifo_counter <= fifo_counter + 3'd4;
-                end
-            end
-        end
+    // Accumulate the source; a strobe snapshots and restarts the window.
+    if (ca_en) begin
+        snap_l <= acc_l;
+        snap_r <= acc_r;
+        snap_n <= acc_n;
+        acc_l  <= src_ce ? 21'(in_l) : 21'sd0;
+        acc_r  <= src_ce ? 21'(in_r) : 21'sd0;
+        acc_n  <= src_ce ? 4'd1 : 4'd0;
+    end else if (src_ce) begin
+        acc_l <= acc_l + 21'(in_l);
+        acc_r <= acc_r + 21'(in_r);
+        if (acc_n != 4'd15) acc_n <= acc_n + 1'd1;
+    end
 
-        // Read process
-        if (rd == 1'b1 && empty == 1'b0) begin
-            // Decrement the fake fifo counter
-            fifo_counter <= fifo_counter - 1'd1;
+    case (state)
+        S_IDLE: begin
+            if (ca_en) state <= S_MUL;
         end
-
-        // Prevent overflows that are over FIFO_SIZE
-        if (fifo_counter > FIFO_SIZE) begin
-            fifo_counter <= FIFO_BW'(FIFO_SIZE);
+        S_MUL: begin
+            prod_l <= snap_l * $signed({1'b0, recip(snap_n)});
+            prod_r <= snap_r * $signed({1'b0, recip(snap_n)});
+            state  <= S_AVG;
         end
+        S_AVG: begin
+            // No source sample in this window: repeat the previous value.
+            avg_l  <= (snap_n == 0) ? last_l : 16'((prod_l + 39'sd32768) >>> 16);
+            avg_r  <= (snap_n == 0) ? last_r : 16'((prod_r + 39'sd32768) >>> 16);
+            last_l <= (snap_n == 0) ? last_l : 16'((prod_l + 39'sd32768) >>> 16);
+            last_r <= (snap_n == 0) ? last_r : 16'((prod_r + 39'sd32768) >>> 16);
+            step   <= 2'd0;
+            // A sample is stored completely or dropped (overrun).
+            if (room >= nbytes) state <= S_WRITE;
+            else                state <= S_IDLE;
+        end
+        S_WRITE: begin
+            mem[wr_ptr[AW-1:0]] <= wbyte;
+            wr_ptr <= wr_ptr + 1'd1;
+            step   <= step + 1'd1;
+            if ({1'b0, step} + 3'd1 == nbytes) state <= S_IDLE;
+        end
+        default: state <= S_IDLE;
+    endcase
 
-        // Always present the same fake data
-        data_out <= 8'h80;
+    if (rd && !empty) rd_ptr <= rd_ptr + 1'd1;
+
+    if (flush) begin
+        wr_ptr <= '0;
+        rd_ptr <= '0;
+        state  <= S_IDLE;
+        last_l <= 16'sd0;
+        last_r <= 16'sd0;
+        acc_l  <= 21'sd0;
+        acc_r  <= 21'sd0;
+        acc_n  <= 4'd0;
     end
 end
-
-
 endmodule
