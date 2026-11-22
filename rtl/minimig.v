@@ -262,6 +262,7 @@ module minimig
 	output [15:0] toccata_aud_left,
 	output [15:0] toccata_aud_right,
 	output        toccata_rec,
+	output [12:0] toccata_dbg,
 
 	// A2065 Ethernet
 	input         a2065_ena,
@@ -1056,6 +1057,7 @@ toccata #(
 	.smp_l(smp_l),
 	.smp_r(smp_r),
 	.smp_active(smp_active),
+	.rec_dbg(toccata_dbg),
 	.rec_active(toccata_rec)
 );
 

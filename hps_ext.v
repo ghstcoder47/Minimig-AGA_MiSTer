@@ -92,6 +92,7 @@ module hps_ext
 
 	input             smp_req,
 	input             smp_deep,
+	input      [12:0] smp_dbg,
 	output reg        smp_start,
 	output reg        smp_wr,
 	output reg [15:0] smp_dout
@@ -254,7 +255,7 @@ always@(posedge clk_sys) begin : main_proc
 					// Second status word: bit 15 = sampler FIFO has room for a burst,
 					// bit 14 = deep buffering (Toccata record active).
 					// The first word is full (akiko_rst_cnt uses bits 15:14).
-					if(byte_cnt == 1) io_dout <= {smp_req, smp_deep, 14'd0};
+					if(byte_cnt == 1) io_dout <= {smp_req, smp_deep, smp_dbg};
 
 				'h61: begin
 					// Payload follows both address words; the counter saturates

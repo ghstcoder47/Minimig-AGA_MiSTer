@@ -122,6 +122,7 @@ wire        akiko_cs_subcode;
 wire        akiko_req;
 wire        smp_req;
 wire        smp_deep;
+wire [12:0] smp_dbg;
 wire        smp_start;
 wire        smp_wr;
 wire [15:0] smp_dout;
@@ -962,6 +963,7 @@ minimig minimig
 	.toccata_aud_left (toccata_aud_left),
 	.toccata_aud_right(toccata_aud_right),
 	.toccata_rec(smp_deep),
+	.toccata_dbg(smp_dbg),
 
 	.cdtv_mode           (cdtv_mode            ),
 

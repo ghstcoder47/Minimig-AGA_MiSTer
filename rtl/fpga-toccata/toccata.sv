@@ -29,6 +29,7 @@ module toccata #(
     input  wire signed [15:0] smp_l,
     input  wire signed [15:0] smp_r,
     input  wire         smp_active,
+    output wire [12:0]  rec_dbg,
     output wire         rec_active // record FIFO is being read by the Amiga
 );
 
@@ -211,6 +212,8 @@ struct {
 // seen by the CPU is the one that is removed.
 logic cap_rd;
 assign rec_active = ad.cen && toc_status[STATUS_FIFO_RECORD];
+wire [12:0] rec_dbg_w;
+assign rec_dbg = rec_dbg_w;
 logic cap_hold;
 logic [8:0] cap_pop_cnt;
 logic cap_rd_sel, cap_rd_q;
@@ -242,6 +245,7 @@ toccata_capture #(
     .half_full(cap.half_full),
     .full(cap.full),
 
+    .dbg(rec_dbg_w),
     .endata(cap.endata)
 );
 
