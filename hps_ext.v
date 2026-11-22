@@ -255,7 +255,7 @@ always@(posedge clk_sys) begin : main_proc
 					// Second status word: bit 15 = sampler FIFO has room for a burst,
 					// bit 14 = deep buffering (Toccata record active).
 					// The first word is full (akiko_rst_cnt uses bits 15:14).
-					if(byte_cnt == 1) io_dout <= {smp_req, smp_deep, 1'b0, smp_dbg};
+					if(byte_cnt == 1) io_dout <= {smp_req, smp_deep, 1'b1, smp_dbg};
 
 				'h61: begin
 					// Payload follows both address words; the counter saturates
